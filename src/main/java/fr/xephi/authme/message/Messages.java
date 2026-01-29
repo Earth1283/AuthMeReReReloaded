@@ -7,6 +7,8 @@ import fr.xephi.authme.output.ConsoleLoggerFactory;
 import fr.xephi.authme.util.expiring.Duration;
 import fr.xephi.authme.util.message.I18NUtils;
 import fr.xephi.authme.util.message.MiniMessageUtils;
+import net.kyori.adventure.platform.bukkit.BukkitAudiences;
+import net.kyori.adventure.text.Component;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -44,13 +46,15 @@ public class Messages {
     private final ConsoleLogger logger = ConsoleLoggerFactory.get(EmailService.class);
 
     private MessagesFileHandler messagesFileHandler;
+    private BukkitAudiences adventure;
 
     /*
      * Constructor.
      */
     @Inject
-    Messages(MessagesFileHandler messagesFileHandler) {
+    Messages(MessagesFileHandler messagesFileHandler, BukkitAudiences adventure) {
         this.messagesFileHandler = messagesFileHandler;
+        this.adventure = adventure;
     }
 
     /**
@@ -60,10 +64,15 @@ public class Messages {
      * @param key The key of the message to send
      */
     public void send(CommandSender sender, MessageKey key) {
-        String[] lines = retrieve(key, sender);
-        for (String line : lines) {
-            sender.sendMessage(line);
+        String locale = sender instanceof Player ? I18NUtils.getLocale((Player) sender) : null;
+        String message = messagesFileHandler.getMessageByLocale(key.getKey(), locale);
+        if (message.isEmpty()) {
+            return;
         }
+
+        message = processReplacements(message, sender);
+        Component component = MiniMessageUtils.deserialize(message);
+        adventure.sender(sender).sendMessage(component);
     }
 
     /**
@@ -76,10 +85,42 @@ public class Messages {
      * @param replacements The replacements to apply for the tags
      */
     public void send(CommandSender sender, MessageKey key, String... replacements) {
-        String message = retrieveSingle(sender, key, replacements);
-        for (String line : message.split("\n")) {
-            sender.sendMessage(line);
+        String locale = sender instanceof Player ? I18NUtils.getLocale((Player) sender) : null;
+        String message = messagesFileHandler.getMessageByLocale(key.getKey(), locale);
+        if (message.isEmpty()) {
+            return;
         }
+
+        message = processReplacements(message, sender);
+        String[] tags = key.getTags();
+        if (replacements.length == tags.length) {
+            for (int i = 0; i < tags.length; ++i) {
+                message = message.replace(tags[i], replacements[i]);
+            }
+        } else {
+            logger.warning("Invalid number of replacements for message key '" + key + "'");
+        }
+
+        Component component = MiniMessageUtils.deserialize(message);
+        adventure.sender(sender).sendMessage(component);
+    }
+
+    /**
+     * Process global tag replacements on the raw message string.
+     *
+     * @param message The raw message string
+     * @param sender The entity to send the message to
+     * @return The message with global tags replaced
+     */
+    private String processReplacements(String message, CommandSender sender) {
+        String displayName = sender.getName();
+        if (sender instanceof Player) {
+            displayName = ((Player) sender).getDisplayName();
+        }
+        return message
+            .replace(NEWLINE_TAG, "\n")
+            .replace(USERNAME_TAG, sender.getName())
+            .replace(DISPLAYNAME_TAG, displayName);
     }
 
     /**

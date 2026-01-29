@@ -46,6 +46,7 @@ import fr.xephi.authme.task.CleanupTask;
 import fr.xephi.authme.task.Updater;
 import fr.xephi.authme.task.purge.PurgeService;
 import fr.xephi.authme.util.ExceptionUtils;
+import net.kyori.adventure.platform.bukkit.BukkitAudiences;
 import org.bukkit.Server;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -88,11 +89,19 @@ public class AuthMe extends JavaPlugin {
     private Injector injector;
     private BackupService backupService;
     public static ConsoleLogger logger;
+    private BukkitAudiences adventure;
 
     /**
      * Constructor.
      */
     public AuthMe() {
+    }
+
+    public BukkitAudiences adventure() {
+        if (this.adventure == null) {
+            throw new IllegalStateException("Tried to access Adventure when the plugin was disabled!");
+        }
+        return this.adventure;
     }
 
     /**
@@ -153,6 +162,7 @@ public class AuthMe extends JavaPlugin {
         loadPluginInfo(getDescription().getVersion());
         scheduler = UniversalScheduler.getScheduler(this);
         libraryManager = new BukkitLibraryManager(this);
+        this.adventure = BukkitAudiences.create(this);
 
         // Set the Logger instance and log file path
         ConsoleLogger.initialize(getLogger(), new File(getDataFolder(), LOG_FILENAME));
@@ -260,6 +270,7 @@ public class AuthMe extends JavaPlugin {
         injector.register(AuthMe.class, this);
         injector.register(Server.class, getServer());
         injector.register(PluginManager.class, getServer().getPluginManager());
+        injector.register(BukkitAudiences.class, this.adventure);
         injector.provide(DataFolder.class, getDataFolder());
         injector.registerProvider(Settings.class, SettingsProvider.class);
         injector.registerProvider(DataSource.class, DataSourceProvider.class);
@@ -402,6 +413,11 @@ public class AuthMe extends JavaPlugin {
 
         // Wait for tasks and close data source
         new TaskCloser(database).run();
+
+        if (this.adventure != null) {
+            this.adventure.close();
+            this.adventure = null;
+        }
 
         // Disabled correctly
         Consumer<String> infoLogMethod = logger == null ? getLogger()::info : logger::info;
